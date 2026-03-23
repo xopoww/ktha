@@ -17,12 +17,22 @@ A prototype backend for a lightweight Node.js hosting platform. Apps run in isol
 - Node.js (for guest apps)
 - Root or appropriate capabilities (`CAP_SYS_ADMIN`, `CAP_SYS_CHROOT`)
 
+## Project Structure
+
+```
+ktha/
+├── node/       # Go service: reverse proxy + process manager
+├── apps/       # Sample Node.js guest apps for testing and demo
+└── docs/       # Design documentation and diagrams
+```
+
 ## Building
 
 ```bash
+cd node
 go build -o ktha ./cmd/ktha
 ```
 
 ## Architecture
 
-See [DESIGN.md](DESIGN.md) for detailed design documentation with diagrams.
+See [docs/DESIGN.md](docs/DESIGN.md) for detailed design documentation with diagrams.

@@ -23,16 +23,26 @@ A Go service that acts as a reverse proxy + process manager for isolated Node.js
 - **IPC:** Unix domain sockets
 - **Guest runtime:** Node.js
 
+## Repo Structure
+
+```
+ktha/
+├── node/       # Go module (github.com/xopoww/ktha/node)
+├── apps/       # Sample Node.js guest apps
+└── docs/       # Design doc, diagrams
+```
+
 ## Build & Run
 
 ```bash
+cd node
 go build -o ktha ./cmd/ktha
 sudo ./ktha  # needs root for namespace/cgroup operations
 ```
 
 ## Code Conventions
 
-- Standard Go project layout: `cmd/`, `internal/`
+- Standard Go project layout under `node/`: `cmd/`, `internal/`
 - Use `slog` for structured logging
 - Error wrapping with `fmt.Errorf("context: %w", err)`
 - No unnecessary abstractions — this is a prototype, keep it direct

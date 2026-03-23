@@ -12,3 +12,5 @@
 # Test artifacts
 /tmp/
 
+# Local Claude config (vault pointers, env-specific)
+.claude/
