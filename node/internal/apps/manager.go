@@ -1,6 +1,7 @@
 package apps
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"sync"
@@ -24,6 +25,7 @@ type AppManagerConfig struct {
 	RootfsRoot            string
 	ReadinessPollInterval time.Duration
 	ReadinessTimeout      time.Duration
+	IdleTimeout           time.Duration
 }
 
 func NewAppManager(cfg AppManagerConfig, log *zap.Logger) *AppManager {
@@ -40,12 +42,11 @@ type AppSpec struct {
 	Image string
 }
 
-// currently starts the app as well
 func (a *AppManager) AddApp(id string, spec AppSpec) error {
 	a.mx.Lock()
+	defer a.mx.Unlock()
 
 	if _, ok := a.controllers[id]; ok {
-		a.mx.Unlock()
 		return fmt.Errorf("app %q already exists", id)
 	}
 
@@ -56,15 +57,10 @@ func (a *AppManager) AddApp(id string, spec AppSpec) error {
 		RootfsRoot:            a.cfg.RootfsRoot,
 		ReadinessPollInterval: a.cfg.ReadinessPollInterval,
 		ReadinessTimeout:      a.cfg.ReadinessTimeout,
+		IdleTimeout:           a.cfg.IdleTimeout,
 	}
 	ac := NewAppController(id, appCfg, a.log)
 	a.controllers[id] = ac
-
-	a.mx.Unlock()
-
-	if err := ac.Start(); err != nil {
-		return fmt.Errorf("start: %w", err)
-	}
 
 	return nil
 }
@@ -93,13 +89,12 @@ func (a *AppManager) Shutdown(timeout time.Duration) {
 }
 
 var ErrAppNotFound = errors.New("app not found")
-var ErrAppNotReady = errors.New("app not ready")
 
-func (a *AppManager) DialApp(id string) (socket string, err error) {
+func (a *AppManager) DialApp(ctx context.Context, id string) (socket string, err error) {
 	a.mx.Lock()
-	defer a.mx.Unlock()
 
 	if a.shuttingDown {
+		a.mx.Unlock()
 		return "", fmt.Errorf("manager is shutting down")
 	}
 
@@ -108,8 +103,20 @@ func (a *AppManager) DialApp(id string) (socket string, err error) {
 		return "", ErrAppNotFound
 	}
 
-	if status := ac.Status(); status != RUNNING {
-		return "", fmt.Errorf("%w (%q)", ErrAppNotReady, status)
+	a.mx.Unlock()
+
+	ensureRunning := make(chan error)
+	go func() {
+		ensureRunning <- ac.EnsureRunning()
+	}()
+
+	select {
+	case err := <-ensureRunning:
+		if err != nil {
+			return "", fmt.Errorf("ensure running: %w", err)
+		}
+	case <-ctx.Done():
+		return "", ctx.Err()
 	}
 
 	socket, err = ac.Socket()

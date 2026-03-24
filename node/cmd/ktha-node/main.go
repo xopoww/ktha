@@ -55,6 +55,7 @@ func run() error {
 		RootfsRoot:            cfg.Runner.RootfsRoot,
 		ReadinessPollInterval: time.Millisecond * 100,
 		ReadinessTimeout:      time.Minute,
+		IdleTimeout:           time.Second * 10,
 	}
 	mgr := apps.NewAppManager(mgrCfg, log)
 

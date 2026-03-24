@@ -2,6 +2,7 @@ package apps
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -24,12 +25,14 @@ type AppControllerConfig struct {
 
 	ReadinessPollInterval time.Duration
 	ReadinessTimeout      time.Duration
+	IdleTimeout           time.Duration
 }
 
 type appContainer struct {
-	id   string
-	cmd  *exec.Cmd
-	down chan struct{}
+	id    string
+	cmd   *exec.Cmd
+	down  chan struct{}
+	ready chan struct{}
 }
 
 type AppController struct {
@@ -40,7 +43,8 @@ type AppController struct {
 	cfg AppControllerConfig
 	log *zap.Logger
 
-	container *appContainer
+	container      *appContainer
+	downscaleTimer *time.Timer
 }
 
 func NewAppController(id string, cfg AppControllerConfig, log *zap.Logger) *AppController {
@@ -70,6 +74,10 @@ func (a *AppController) Start() error {
 	if a.status != STOPPED {
 		return fmt.Errorf("cannot start from %q", a.status)
 	}
+	return a.startLocked()
+}
+
+func (a *AppController) startLocked() error {
 	a.status = STARTING
 	a.log.Info("App is starting.")
 
@@ -90,10 +98,12 @@ func (a *AppController) Start() error {
 	}
 
 	down := make(chan struct{})
+	ready := make(chan struct{})
 	a.container = &appContainer{
-		id:   containerID,
-		cmd:  cmd,
-		down: down,
+		id:    containerID,
+		cmd:   cmd,
+		down:  down,
+		ready: ready,
 	}
 
 	// wait for exit
@@ -121,12 +131,25 @@ func (a *AppController) Start() error {
 		for {
 			select {
 			case <-ticker.C:
-				ready := a.checkReadiness()
-				if ready {
+				isReady := a.checkReadiness()
+				if isReady {
 					a.mx.Lock()
 					defer a.mx.Unlock()
+
 					a.log.Sugar().Info("App is running.")
 					a.status = RUNNING
+					close(ready)
+
+					downscaleTimer := time.NewTimer(a.cfg.IdleTimeout)
+					go func() {
+						<-downscaleTimer.C
+						a.log.Sugar().Info("Autoscaling the app down to zero...")
+						if err := a.Stop(time.Second * 5); err != nil {
+							a.log.Sugar().Errorf("Failed to stop the app: %s", err)
+						}
+					}()
+					a.downscaleTimer = downscaleTimer
+
 					return
 				}
 			case <-timeout:
@@ -155,6 +178,47 @@ func (a AppController) Socket() (string, error) {
 	}
 	socket := filepath.Join(a.cfg.RootfsRoot, a.container.id, "app.sock")
 	return socket, nil
+}
+
+var ErrAppIsDead = errors.New("app is dead")
+
+func (a *AppController) EnsureRunning() error {
+	var ready, down <-chan struct{}
+	if err := func() error {
+		a.mx.Lock()
+		defer a.mx.Unlock()
+
+		if a.status == RUNNING {
+			a.log.Sugar().Debug("Reset the downscale timer.")
+			a.downscaleTimer.Reset(a.cfg.IdleTimeout)
+			return nil
+		}
+		if a.status == DEAD {
+			return ErrAppIsDead
+		}
+
+		if a.status == STOPPED {
+			a.log.Sugar().Infof("Auto-scaling the app up from zero...")
+			if err := a.startLocked(); err != nil {
+				return fmt.Errorf("start: %w", err)
+			}
+		}
+		if a.container == nil {
+			return fmt.Errorf("container is unexpectedly nil")
+		}
+		ready = a.container.ready
+		down = a.container.down
+		return nil
+	}(); err != nil {
+		return err
+	}
+
+	select {
+	case <-ready:
+		return nil
+	case <-down:
+		return ErrAppIsDead
+	}
 }
 
 func (a AppController) checkReadiness() bool {
@@ -208,6 +272,11 @@ func (a *AppController) Stop(timeout time.Duration) error {
 
 		if a.status != STARTING && a.status != RUNNING {
 			return fmt.Errorf("cannot stop from %q", a.status)
+		}
+
+		if a.downscaleTimer != nil {
+			a.downscaleTimer.Stop()
+			a.downscaleTimer = nil
 		}
 
 		if a.container == nil {

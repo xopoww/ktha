@@ -36,7 +36,7 @@ func NewReverseProxy(mgr *apps.AppManager, log *zap.Logger) *httputil.ReversePro
 					return nil, apps.ErrAppNotFound
 				}
 
-				socket, err := mgr.DialApp(appID)
+				socket, err := mgr.DialApp(ctx, appID)
 				if err != nil {
 					return nil, fmt.Errorf("dial app: %w", err)
 				}
@@ -48,7 +48,7 @@ func NewReverseProxy(mgr *apps.AppManager, log *zap.Logger) *httputil.ReversePro
 			log.Sugar().Debugf("Proxy error: %s.", err)
 			if errors.Is(err, apps.ErrAppNotFound) {
 				w.WriteHeader(http.StatusNotFound)
-			} else if errors.Is(err, apps.ErrAppNotReady) {
+			} else if errors.Is(err, apps.ErrAppIsDead) {
 				w.WriteHeader(http.StatusServiceUnavailable)
 			} else {
 				w.WriteHeader(http.StatusBadGateway)
