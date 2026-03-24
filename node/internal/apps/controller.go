@@ -57,6 +57,12 @@ func (a AppController) ID() string {
 	return a.id
 }
 
+func (a AppController) Status() AppStatus {
+	a.mx.Lock()
+	defer a.mx.Unlock()
+	return a.status
+}
+
 func (a *AppController) Start() error {
 	a.mx.Lock()
 	defer a.mx.Unlock()

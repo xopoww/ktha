@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,6 +13,7 @@ import (
 
 	"github.com/xopoww/ktha/node/internal/apps"
 	"github.com/xopoww/ktha/node/internal/config"
+	"github.com/xopoww/ktha/node/internal/proxy"
 	"go.uber.org/zap"
 )
 
@@ -18,14 +21,16 @@ var args struct {
 	config string
 
 	// flags for temporary scenario
-	image string
+	image1 string
+	image2 string
 }
 
 func init() {
 	flag.StringVar(&args.config, "config", "/etc/ktha/node/config.yml", "path to yaml config file")
 
 	// flags for temporary scenario
-	flag.StringVar(&args.image, "image", "", "")
+	flag.StringVar(&args.image1, "image1", "", "")
+	flag.StringVar(&args.image2, "image2", "", "")
 
 	flag.Parse()
 }
@@ -42,24 +47,46 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
-	// temporary hardcoded scenario
+	// set up manager
 
-	if args.image == "" {
-		return fmt.Errorf("image is required")
-	}
-	appCfg := apps.AppControllerConfig{
-		Image:                 args.image,
+	mgrCfg := apps.AppManagerConfig{
 		RunnerBinaryPath:      cfg.Runner.BinaryPath,
 		NodeBinaryPath:        cfg.NodeJS.BinaryPath,
 		RootfsRoot:            cfg.Runner.RootfsRoot,
 		ReadinessPollInterval: time.Millisecond * 100,
 		ReadinessTimeout:      time.Minute,
 	}
-	app := apps.NewAppController("app1", appCfg, log)
+	mgr := apps.NewAppManager(mgrCfg, log)
 
-	if err := app.Start(); err != nil {
-		return fmt.Errorf("start app: %w", err)
+	// set up proxy
+
+	proxyServer := &http.Server{
+		Addr:    fmt.Sprintf(":%d", cfg.Proxy.Port),
+		Handler: proxy.NewReverseProxy(mgr, log),
 	}
+	go func() {
+		log.Sugar().Debugf("Starting the reverse proxy on %s...", proxyServer.Addr)
+		err := proxyServer.ListenAndServe()
+		log.Sugar().Infof("Reverse proxy stopped: %s.", err)
+	}()
+
+	// temporary hardcoded scenario
+
+	if args.image1 == "" || args.image2 == "" {
+		return fmt.Errorf("images are required")
+	}
+	if err := mgr.AddApp("app1", apps.AppSpec{
+		Image: args.image1,
+	}); err != nil {
+		log.Sugar().Errorf("Failed to add app1: %s.", err)
+	}
+	if err := mgr.AddApp("app2", apps.AppSpec{
+		Image: args.image2,
+	}); err != nil {
+		log.Sugar().Errorf("Failed to add app2: %s.", err)
+	}
+
+	// graceful shutdown
 
 	sigch := make(chan os.Signal, 1)
 	signal.Notify(sigch, syscall.SIGINT, syscall.SIGTERM)
@@ -67,9 +94,15 @@ func run() error {
 	sig := <-sigch
 	log.Sugar().Infof("Received signal: %s.", sig)
 
-	if err := app.Stop(time.Second * 5); err != nil {
-		return fmt.Errorf("stop app: %w", err)
+	// first, shutdown and drain the reverse proxy
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	if err := proxyServer.Shutdown(ctx); err != nil {
+		log.Sugar().Errorf("Error during reverse proxy shutdown: %s.", err)
 	}
+
+	// then, shutdown the guests
+	mgr.Shutdown(time.Second * 5)
 
 	return nil
 }
