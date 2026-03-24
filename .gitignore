@@ -1,5 +1,9 @@
-# Binary
-/ktha
+# Binaries
+node/build/
+
+# App build output & deps
+apps/build/
+apps/node_modules/
 
 # IDE
 .idea/
