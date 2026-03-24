@@ -1,6 +1,7 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"log"
@@ -11,7 +12,6 @@ import (
 	"runtime"
 	"syscall"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 )
 
@@ -22,15 +22,17 @@ var args struct {
 	inner       bool
 
 	nodeBinary string
+	rootfsRoot string
 }
 
 func init() {
 	flag.StringVar(&args.image, "image", "", "path to unpacked image (don't pass with --inner)")
-	flag.StringVar(&args.containerID, "id", "", "container id (only works with --inner)")
+	flag.StringVar(&args.containerID, "id", "", "container id")
 	flag.StringVar(&args.socket, "sock", "app.sock", "path (relative to root) to unix socket for the guest")
 	flag.BoolVar(&args.inner, "inner", false, "if command is invoked inside a namespace already (never pass manually)")
 
 	flag.StringVar(&args.nodeBinary, "node-bin", "", "path to node.js runtime binary (resolves from path by default)")
+	flag.StringVar(&args.rootfsRoot, "rootfs", "/tmp/ktha/rootfs/", "parent directory for container roots")
 
 	flag.Parse()
 }
@@ -65,6 +67,13 @@ func runChild(log *zap.Logger, child *exec.Cmd) error {
 	}
 
 	if err := child.Wait(); err != nil {
+		var exitErr *exec.ExitError
+		if errors.As(err, &exitErr) {
+			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+				log.Sugar().Debugf("Child killed by signal %s", status.Signal())
+				return nil
+			}
+		}
 		return fmt.Errorf("wait: %w", err)
 	}
 
@@ -96,8 +105,7 @@ func bindMountReadonly(source string, target string) error {
 }
 
 func rootfsLocation(containerID string) string {
-	const rootfsRoot = "/tmp/ktha/rootfs/"
-	return filepath.Join(rootfsRoot, containerID)
+	return filepath.Join(args.rootfsRoot, containerID)
 }
 
 func setupRootfs(log *zap.Logger, image string, root string) error {
@@ -125,8 +133,7 @@ func outer(log *zap.Logger) error {
 
 	// set up rootfs
 
-	containerID := uuid.New().String()
-	root := rootfsLocation(containerID)
+	root := rootfsLocation(args.containerID)
 
 	if err := setupRootfs(log, args.image, root); err != nil {
 		cleanupRootfs(log, root)
@@ -142,7 +149,7 @@ func outer(log *zap.Logger) error {
 	}
 
 	argv := make([]string, 0)
-	argv = append(argv, "--id", containerID)
+	argv = append(argv, "--id", args.containerID)
 	argv = append(argv, "--sock", args.socket)
 	argv = append(argv, "--inner")
 	argv = append(argv, "--node-bin", args.nodeBinary)
@@ -156,11 +163,6 @@ func outer(log *zap.Logger) error {
 }
 
 func inner(log *zap.Logger) error {
-	if args.containerID == "" {
-		return fmt.Errorf("id is required")
-	}
-	log = log.With(zap.String("containerID", args.containerID))
-
 	if os.Getpid() != 1 {
 		return fmt.Errorf("must be in a new pid namespace")
 	}
@@ -234,6 +236,11 @@ func run() error {
 	}
 	log = log.With(zap.Bool("inner", args.inner))
 	defer log.Sync()
+
+	if args.containerID == "" {
+		return fmt.Errorf("id is required")
+	}
+	log = log.With(zap.String("containerID", args.containerID))
 
 	if args.nodeBinary == "" {
 		var err error
