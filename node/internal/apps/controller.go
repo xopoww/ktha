@@ -26,6 +26,7 @@ type AppControllerConfig struct {
 	ReadinessPollInterval time.Duration
 	ReadinessTimeout      time.Duration
 	IdleTimeout           time.Duration
+	StopTimeout           time.Duration
 }
 
 type appContainer struct {
@@ -144,7 +145,7 @@ func (a *AppController) startLocked() error {
 					go func() {
 						<-downscaleTimer.C
 						a.log.Sugar().Info("Autoscaling the app down to zero...")
-						if err := a.Stop(time.Second * 5); err != nil {
+						if err := a.Stop(); err != nil {
 							a.log.Sugar().Errorf("Failed to stop the app: %s", err)
 						}
 					}()
@@ -188,21 +189,21 @@ func (a *AppController) EnsureRunning() error {
 		a.mx.Lock()
 		defer a.mx.Unlock()
 
-		if a.status == RUNNING {
+		switch a.status {
+		case RUNNING:
 			a.log.Sugar().Debug("Reset the downscale timer.")
 			a.downscaleTimer.Reset(a.cfg.IdleTimeout)
-			return nil
-		}
-		if a.status == DEAD {
+		case DEAD:
 			return ErrAppIsDead
-		}
-
-		if a.status == STOPPED {
+		case STOPPED:
 			a.log.Sugar().Infof("Auto-scaling the app up from zero...")
 			if err := a.startLocked(); err != nil {
 				return fmt.Errorf("start: %w", err)
 			}
 		}
+
+		// app is either STARTING or RUNNING at this point
+
 		if a.container == nil {
 			return fmt.Errorf("container is unexpectedly nil")
 		}
@@ -264,7 +265,7 @@ func (a *AppController) kill() error {
 	return a.container.cmd.Process.Kill()
 }
 
-func (a *AppController) Stop(timeout time.Duration) error {
+func (a *AppController) Stop() error {
 	var down chan struct{}
 	if err := func() error {
 		a.mx.Lock()
@@ -296,7 +297,7 @@ func (a *AppController) Stop(timeout time.Duration) error {
 	select {
 	case <-down:
 		return nil
-	case <-time.After(timeout):
+	case <-time.After(a.cfg.StopTimeout):
 		a.log.Sugar().Warn("App stop timeout.")
 		if err := a.kill(); err != nil {
 			return fmt.Errorf("kill: %w", err)

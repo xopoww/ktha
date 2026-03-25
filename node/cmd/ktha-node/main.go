@@ -19,18 +19,10 @@ import (
 
 var args struct {
 	config string
-
-	// flags for temporary scenario
-	image1 string
-	image2 string
 }
 
 func init() {
 	flag.StringVar(&args.config, "config", "/etc/ktha/node/config.yml", "path to yaml config file")
-
-	// flags for temporary scenario
-	flag.StringVar(&args.image1, "image1", "", "")
-	flag.StringVar(&args.image2, "image2", "", "")
 
 	flag.Parse()
 }
@@ -53,11 +45,24 @@ func run() error {
 		RunnerBinaryPath:      cfg.Runner.BinaryPath,
 		NodeBinaryPath:        cfg.NodeJS.BinaryPath,
 		RootfsRoot:            cfg.Runner.RootfsRoot,
-		ReadinessPollInterval: time.Millisecond * 100,
-		ReadinessTimeout:      time.Minute,
-		IdleTimeout:           time.Second * 10,
+		ImagesBasePath:        cfg.Application.ImagesBasePath,
+		ReadinessPollInterval: cfg.Application.ReadinessPollInterval,
+		ReadinessTimeout:      cfg.Application.ReadinessTimeout,
+		IdleTimeout:           cfg.Application.IdleTimeout,
+		StopTimeout:           cfg.Application.StopTimeout,
 	}
 	mgr := apps.NewAppManager(mgrCfg, log)
+
+	specs := make([]apps.AppSpec, 0, len(cfg.Application.Apps))
+	for id, appCfg := range cfg.Application.Apps {
+		specs = append(specs, apps.AppSpec{
+			ID:    id,
+			Image: appCfg.Image,
+		})
+	}
+	if err := mgr.AddApps(specs); err != nil {
+		return fmt.Errorf("add apps: %w", err)
+	}
 
 	// set up proxy
 
@@ -70,22 +75,6 @@ func run() error {
 		err := proxyServer.ListenAndServe()
 		log.Sugar().Infof("Reverse proxy stopped: %s.", err)
 	}()
-
-	// temporary hardcoded scenario
-
-	if args.image1 == "" || args.image2 == "" {
-		return fmt.Errorf("images are required")
-	}
-	if err := mgr.AddApp("app1", apps.AppSpec{
-		Image: args.image1,
-	}); err != nil {
-		log.Sugar().Errorf("Failed to add app1: %s.", err)
-	}
-	if err := mgr.AddApp("app2", apps.AppSpec{
-		Image: args.image2,
-	}); err != nil {
-		log.Sugar().Errorf("Failed to add app2: %s.", err)
-	}
 
 	// graceful shutdown
 
@@ -103,7 +92,7 @@ func run() error {
 	}
 
 	// then, shutdown the guests
-	mgr.Shutdown(time.Second * 5)
+	mgr.Shutdown()
 
 	return nil
 }

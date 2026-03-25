@@ -18,13 +18,15 @@ var appIdContextKey struct{}
 func NewReverseProxy(mgr *apps.AppManager, log *zap.Logger) *httputil.ReverseProxy {
 	return &httputil.ReverseProxy{
 		Rewrite: func(r *httputil.ProxyRequest) {
-			appID, outPath := parseInPath(r.In.URL.Path)
+			inPath := r.In.URL.Path
+			appID, outPath := parseInPath(inPath)
 			r.Out.URL.Path = outPath
 			r.Out.URL.Scheme = "http"
-			r.Out.URL.Host = "localhost"
+			r.Out.URL.Host = appID
 			r.Out = r.Out.WithContext(
 				context.WithValue(r.Out.Context(), appIdContextKey, appID),
 			)
+			log.Sugar().Debugf("Incoming request %q -> [%s]%q.", inPath, appID, outPath)
 		},
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -40,9 +42,12 @@ func NewReverseProxy(mgr *apps.AppManager, log *zap.Logger) *httputil.ReversePro
 				if err != nil {
 					return nil, fmt.Errorf("dial app: %w", err)
 				}
+				log.Sugar().Debugf("Dial %q: %s.", appID, socket)
 
 				return net.Dial("unix", socket)
 			},
+			// important: keepalive would bypass idle timeour timer reset
+			DisableKeepAlives: true,
 		},
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			log.Sugar().Debugf("Proxy error: %s.", err)

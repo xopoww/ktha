@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -23,9 +24,11 @@ type AppManagerConfig struct {
 	RunnerBinaryPath      string
 	NodeBinaryPath        string
 	RootfsRoot            string
+	ImagesBasePath        string
 	ReadinessPollInterval time.Duration
 	ReadinessTimeout      time.Duration
 	IdleTimeout           time.Duration
+	StopTimeout           time.Duration
 }
 
 func NewAppManager(cfg AppManagerConfig, log *zap.Logger) *AppManager {
@@ -39,33 +42,45 @@ func NewAppManager(cfg AppManagerConfig, log *zap.Logger) *AppManager {
 }
 
 type AppSpec struct {
+	ID    string
 	Image string
 }
 
-func (a *AppManager) AddApp(id string, spec AppSpec) error {
+func (a *AppManager) AddApps(specs []AppSpec) error {
 	a.mx.Lock()
 	defer a.mx.Unlock()
 
-	if _, ok := a.controllers[id]; ok {
-		return fmt.Errorf("app %q already exists", id)
+	for _, spec := range specs {
+		if err := a.addAppLocked(spec); err != nil {
+			return fmt.Errorf("add app: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (a *AppManager) addAppLocked(spec AppSpec) error {
+	if _, ok := a.controllers[spec.ID]; ok {
+		return fmt.Errorf("app %q already exists", spec.ID)
 	}
 
 	appCfg := AppControllerConfig{
-		Image:                 spec.Image,
+		Image:                 filepath.Join(a.cfg.ImagesBasePath, spec.Image),
 		RunnerBinaryPath:      a.cfg.RunnerBinaryPath,
 		NodeBinaryPath:        a.cfg.NodeBinaryPath,
 		RootfsRoot:            a.cfg.RootfsRoot,
 		ReadinessPollInterval: a.cfg.ReadinessPollInterval,
 		ReadinessTimeout:      a.cfg.ReadinessTimeout,
 		IdleTimeout:           a.cfg.IdleTimeout,
+		StopTimeout:           a.cfg.StopTimeout,
 	}
-	ac := NewAppController(id, appCfg, a.log)
-	a.controllers[id] = ac
+	ac := NewAppController(spec.ID, appCfg, a.log)
+	a.controllers[spec.ID] = ac
 
 	return nil
 }
 
-func (a *AppManager) Shutdown(timeout time.Duration) {
+func (a *AppManager) Shutdown() {
 	a.mx.Lock()
 
 	a.log.Sugar().Infof("Shutting down the manager...")
@@ -77,7 +92,7 @@ func (a *AppManager) Shutdown(timeout time.Duration) {
 			if status := ac.Status(); status != STARTING && status != RUNNING {
 				return
 			}
-			if err := ac.Stop(timeout); err != nil {
+			if err := ac.Stop(); err != nil {
 				a.log.Sugar().Warnf("Failed to stop the app %q: %s.", id, err)
 			}
 		})
