@@ -1,10 +1,15 @@
 package config
 
-import "time"
+import (
+	"time"
+
+	"github.com/xopoww/ktha/node/internal/common"
+)
 
 type RunnerConfig struct {
 	BinaryPath string `yaml:"binary_path"`
 	RootfsRoot string `yaml:"rootfs_root"`
+	CgroupRoot string `yaml:"cgroup_root"`
 }
 
 type NodeJSConfig struct {
@@ -22,6 +27,8 @@ type ApplicationConfig struct {
 	StopTimeout           time.Duration `yaml:"stop_timeout"`
 
 	ImagesBasePath string `yaml:"images_base_path"`
+
+	Limits common.ContainerLimits `yaml:"limits"`
 
 	// map appID -> AppConfig
 	Apps map[string]AppConfig `yaml:"apps"`

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/xopoww/ktha/node/internal/common"
 	"go.uber.org/zap"
 )
 
@@ -22,6 +23,9 @@ type AppControllerConfig struct {
 	RunnerBinaryPath string
 	NodeBinaryPath   string
 	RootfsRoot       string
+	CgroupRoot       string
+
+	Limits common.ContainerLimits
 
 	ReadinessPollInterval time.Duration
 	ReadinessTimeout      time.Duration
@@ -89,6 +93,10 @@ func (a *AppController) startLocked() error {
 		"--id", containerID,
 		"--node-bin", a.cfg.NodeBinaryPath,
 		"--rootfs", a.cfg.RootfsRoot,
+		"--cgroup", a.cfg.CgroupRoot,
+		"--mem-max", fmt.Sprint(a.cfg.Limits.MemoryMax),
+		"--pids-max", fmt.Sprint(a.cfg.Limits.PidsMax),
+		"--cpu-max", fmt.Sprint(a.cfg.Limits.CPUMax),
 	}
 	cmd := exec.Command(a.cfg.RunnerBinaryPath, flags...)
 

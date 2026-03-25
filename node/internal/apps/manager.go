@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/xopoww/ktha/node/internal/common"
 	"go.uber.org/zap"
 )
 
@@ -24,7 +25,9 @@ type AppManagerConfig struct {
 	RunnerBinaryPath      string
 	NodeBinaryPath        string
 	RootfsRoot            string
+	CgroupRoot            string
 	ImagesBasePath        string
+	Limits                common.ContainerLimits
 	ReadinessPollInterval time.Duration
 	ReadinessTimeout      time.Duration
 	IdleTimeout           time.Duration
@@ -69,6 +72,8 @@ func (a *AppManager) addAppLocked(spec AppSpec) error {
 		RunnerBinaryPath:      a.cfg.RunnerBinaryPath,
 		NodeBinaryPath:        a.cfg.NodeBinaryPath,
 		RootfsRoot:            a.cfg.RootfsRoot,
+		CgroupRoot:            a.cfg.CgroupRoot,
+		Limits:                a.cfg.Limits,
 		ReadinessPollInterval: a.cfg.ReadinessPollInterval,
 		ReadinessTimeout:      a.cfg.ReadinessTimeout,
 		IdleTimeout:           a.cfg.IdleTimeout,

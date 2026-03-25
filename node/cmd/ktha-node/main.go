@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"time"
 
@@ -39,13 +40,28 @@ func run() error {
 		return fmt.Errorf("load config: %w", err)
 	}
 
+	// set up root cgroup subtree
+
+	if err := os.MkdirAll(cfg.Runner.CgroupRoot, 0o755); err != nil {
+		return fmt.Errorf("mkdir root cgroup: %w", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(cfg.Runner.CgroupRoot, "cgroup.subtree_control"),
+		[]byte("+memory +pids +cpu"),
+		0o644,
+	); err != nil {
+		return fmt.Errorf("enable cgroup controllers: %w", err)
+	}
+
 	// set up manager
 
 	mgrCfg := apps.AppManagerConfig{
 		RunnerBinaryPath:      cfg.Runner.BinaryPath,
 		NodeBinaryPath:        cfg.NodeJS.BinaryPath,
 		RootfsRoot:            cfg.Runner.RootfsRoot,
+		CgroupRoot:            cfg.Runner.CgroupRoot,
 		ImagesBasePath:        cfg.Application.ImagesBasePath,
+		Limits:                cfg.Application.Limits,
 		ReadinessPollInterval: cfg.Application.ReadinessPollInterval,
 		ReadinessTimeout:      cfg.Application.ReadinessTimeout,
 		IdleTimeout:           cfg.Application.IdleTimeout,
