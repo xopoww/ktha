@@ -80,8 +80,7 @@ func runChild(log *zap.Logger, child *exec.Cmd) error {
 	}
 
 	if err := child.Wait(); err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
 				log.Sugar().Debugf("Child killed by signal %s", status.Signal())
 				return nil

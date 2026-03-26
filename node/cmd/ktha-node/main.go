@@ -2,11 +2,13 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/exec"
 	"os/signal"
 	"path/filepath"
 	"syscall"
@@ -52,6 +54,36 @@ func run() error {
 	); err != nil {
 		return fmt.Errorf("enable cgroup controllers: %w", err)
 	}
+
+	// set up dummy nodejs process to fault in shared pages
+
+	dummyNodejs := exec.Command(cfg.NodeJS.BinaryPath, "-e", "setInterval(()=>{},2**31-1)")
+	log.Sugar().Debugf("Running dummy nodejs: %s.", dummyNodejs)
+	if err := dummyNodejs.Start(); err != nil {
+		return fmt.Errorf("start dummy nodejs: %w", err)
+	}
+	defer func() {
+		if err := dummyNodejs.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
+			log.Sugar().Warnf("Failed to signal dummy nodejs: %s.", err)
+		}
+	}()
+	go func() {
+		if err := dummyNodejs.Wait(); err != nil {
+			finalErr := err
+
+			if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
+				if status, ok := exitErr.Sys().(syscall.WaitStatus); ok && status.Signaled() {
+					finalErr = nil
+				}
+			}
+
+			if finalErr != nil {
+				log.Sugar().Warnf("Dummy nodejs errored: %s.", finalErr)
+			} else {
+				log.Sugar().Debugf("Dummy nodejs exited (%s).", err)
+			}
+		}
+	}()
 
 	// set up manager
 
