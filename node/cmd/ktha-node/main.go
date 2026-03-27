@@ -14,8 +14,9 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/xopoww/ktha/node/internal/apps"
+	"github.com/xopoww/ktha/node/internal/admin"
 	"github.com/xopoww/ktha/node/internal/config"
+	"github.com/xopoww/ktha/node/internal/manager"
 	"github.com/xopoww/ktha/node/internal/proxy"
 	"go.uber.org/zap"
 )
@@ -36,6 +37,7 @@ func run() error {
 		return fmt.Errorf("init zap: %w", err)
 	}
 	defer log.Sync()
+	l := log.Sugar()
 
 	cfg, err := config.Load(args.config)
 	if err != nil {
@@ -44,11 +46,11 @@ func run() error {
 
 	// set up root cgroup subtree
 
-	if err := os.MkdirAll(cfg.Runner.CgroupRoot, 0o755); err != nil {
+	if err := os.MkdirAll(cfg.Runner.CgroupBasePath, 0o755); err != nil {
 		return fmt.Errorf("mkdir root cgroup: %w", err)
 	}
 	if err := os.WriteFile(
-		filepath.Join(cfg.Runner.CgroupRoot, "cgroup.subtree_control"),
+		filepath.Join(cfg.Runner.CgroupBasePath, "cgroup.subtree_control"),
 		[]byte("+memory +pids +cpu"),
 		0o644,
 	); err != nil {
@@ -57,14 +59,14 @@ func run() error {
 
 	// set up dummy nodejs process to fault in shared pages
 
-	dummyNodejs := exec.Command(cfg.NodeJS.BinaryPath, "-e", "setInterval(()=>{},2**31-1)")
-	log.Sugar().Debugf("Running dummy nodejs: %s.", dummyNodejs)
+	dummyNodejs := exec.Command(cfg.Runner.NodeJS.BinaryPath, "-e", "setInterval(()=>{},2**31-1)")
+	l.Debugf("Running dummy nodejs: %s.", dummyNodejs)
 	if err := dummyNodejs.Start(); err != nil {
 		return fmt.Errorf("start dummy nodejs: %w", err)
 	}
 	defer func() {
 		if err := dummyNodejs.Process.Signal(syscall.SIGTERM); err != nil && !errors.Is(err, os.ErrProcessDone) {
-			log.Sugar().Warnf("Failed to signal dummy nodejs: %s.", err)
+			l.Warnf("Failed to signal dummy nodejs: %s.", err)
 		}
 	}()
 	go func() {
@@ -78,32 +80,27 @@ func run() error {
 			}
 
 			if finalErr != nil {
-				log.Sugar().Warnf("Dummy nodejs errored: %s.", finalErr)
+				l.Warnf("Dummy nodejs errored: %s.", finalErr)
 			} else {
-				log.Sugar().Debugf("Dummy nodejs exited (%s).", err)
+				l.Debugf("Dummy nodejs exited (%s).", err)
 			}
 		}
 	}()
 
 	// set up manager
 
-	mgrCfg := apps.AppManagerConfig{
-		RunnerBinaryPath:      cfg.Runner.BinaryPath,
-		NodeBinaryPath:        cfg.NodeJS.BinaryPath,
-		RootfsRoot:            cfg.Runner.RootfsRoot,
-		CgroupRoot:            cfg.Runner.CgroupRoot,
-		ImagesBasePath:        cfg.Application.ImagesBasePath,
-		Limits:                cfg.Application.Limits,
-		ReadinessPollInterval: cfg.Application.ReadinessPollInterval,
-		ReadinessTimeout:      cfg.Application.ReadinessTimeout,
-		IdleTimeout:           cfg.Application.IdleTimeout,
-		StopTimeout:           cfg.Application.StopTimeout,
+	mgrCfg := manager.AppManagerConfig{
+		ImagesBasePath: cfg.Application.ImagesBasePath,
+		Runner:         cfg.Runner,
+		Limits:         cfg.Application.Limits,
+		Readiness:      cfg.Application.Readiness,
+		Timeouts:       cfg.Application.Timeouts,
 	}
-	mgr := apps.NewAppManager(mgrCfg, log)
+	mgr := manager.NewAppManager(mgrCfg, l)
 
-	specs := make([]apps.AppSpec, 0, len(cfg.Application.Apps))
+	specs := make([]manager.AppSpec, 0, len(cfg.Application.Apps))
 	for id, appCfg := range cfg.Application.Apps {
-		specs = append(specs, apps.AppSpec{
+		specs = append(specs, manager.AppSpec{
 			ID:    id,
 			Image: appCfg.Image,
 		})
@@ -112,16 +109,25 @@ func run() error {
 		return fmt.Errorf("add apps: %w", err)
 	}
 
+	// set up admin server
+
+	adminServer := admin.NewAdminServer(cfg.Admin, mgr, l)
+	go func() {
+		l.Debugf("Starting the admin server on %s...", adminServer.Addr)
+		err := adminServer.ListenAndServe()
+		l.Infof("Admin server stopped: %s.", err)
+	}()
+
 	// set up proxy
 
 	proxyServer := &http.Server{
 		Addr:    fmt.Sprintf(":%d", cfg.Proxy.Port),
-		Handler: proxy.NewReverseProxy(mgr, log),
+		Handler: proxy.NewReverseProxy(mgr, l),
 	}
 	go func() {
-		log.Sugar().Debugf("Starting the reverse proxy on %s...", proxyServer.Addr)
+		l.Debugf("Starting the reverse proxy on %s...", proxyServer.Addr)
 		err := proxyServer.ListenAndServe()
-		log.Sugar().Infof("Reverse proxy stopped: %s.", err)
+		l.Infof("Reverse proxy stopped: %s.", err)
 	}()
 
 	// graceful shutdown
@@ -130,17 +136,24 @@ func run() error {
 	signal.Notify(sigch, syscall.SIGINT, syscall.SIGTERM)
 
 	sig := <-sigch
-	log.Sugar().Infof("Received signal: %s.", sig)
+	l.Infof("Received signal: %s.", sig)
 
 	// first, shutdown and drain the reverse proxy
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second*5)
 	defer cancel()
 	if err := proxyServer.Shutdown(ctx); err != nil {
-		log.Sugar().Errorf("Error during reverse proxy shutdown: %s.", err)
+		l.Errorf("Error during reverse proxy shutdown: %s.", err)
 	}
 
 	// then, shutdown the guests
 	mgr.Shutdown()
+
+	// shutdown the admin server
+	ctx, cancel = context.WithTimeout(context.Background(), time.Second*5)
+	defer cancel()
+	if err := adminServer.Shutdown(ctx); err != nil {
+		l.Errorf("Error during admin server shutdown: %s.", err)
+	}
 
 	return nil
 }

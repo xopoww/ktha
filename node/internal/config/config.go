@@ -2,33 +2,51 @@ package config
 
 import (
 	"time"
-
-	"github.com/xopoww/ktha/node/internal/common"
 )
 
 type RunnerConfig struct {
-	BinaryPath string `yaml:"binary_path"`
-	RootfsRoot string `yaml:"rootfs_root"`
-	CgroupRoot string `yaml:"cgroup_root"`
+	BinaryPath     string `yaml:"binary_path"`
+	RootBasePath   string `yaml:"root_base_path"`
+	CgroupBasePath string `yaml:"cgroup_base_path"`
+	NodeJS         struct {
+		BinaryPath string `yaml:"binary_path"`
+	} `yaml:"nodejs"`
 }
 
-type NodeJSConfig struct {
-	BinaryPath string `yaml:"binary_path"`
+type ContainerLimits struct {
+	// in bytes
+	MemoryMax int `yaml:"memory_max"`
+	PidsMax   int `yaml:"pids_max"`
+	// in µs (100000µs window)
+	CPUMax int `yaml:"cpu_max"`
+}
+
+type ReadinessConfig struct {
+	PollInterval time.Duration `yaml:"poll_interval"`
+	Timeout      time.Duration `yaml:"timeout"`
+}
+
+type AppTimeoutsConfig struct {
+	IdleTimeout  time.Duration `yaml:"idle_timeout"`
+	DrainTimeout time.Duration `yaml:"drain_timeout"`
+	StopTimeout  time.Duration `yaml:"stop_timeout"`
 }
 
 type ProxyConfig struct {
 	Port uint16 `yaml:"port"`
 }
 
-type ApplicationConfig struct {
-	ReadinessPollInterval time.Duration `yaml:"readiness_poll_interval"`
-	ReadinessTimeout      time.Duration `yaml:"readiness_timeout"`
-	IdleTimeout           time.Duration `yaml:"idle_timeout"`
-	StopTimeout           time.Duration `yaml:"stop_timeout"`
+type AdminConfig struct {
+	Port    uint16 `yaml:"port"`
+	AuthKey string `yaml:"auth_key"`
+}
 
+type ApplicationConfig struct {
 	ImagesBasePath string `yaml:"images_base_path"`
 
-	Limits common.ContainerLimits `yaml:"limits"`
+	Limits    ContainerLimits   `yaml:"limits"`
+	Readiness ReadinessConfig   `yaml:"readiness"`
+	Timeouts  AppTimeoutsConfig `yaml:"timeouts"`
 
 	// map appID -> AppConfig
 	Apps map[string]AppConfig `yaml:"apps"`
@@ -39,8 +57,8 @@ type AppConfig struct {
 }
 
 type Config struct {
-	Runner      RunnerConfig      `yaml:"runner"`
-	NodeJS      NodeJSConfig      `yaml:"nodejs"`
+	Admin       AdminConfig       `yaml:"admin"`
 	Proxy       ProxyConfig       `yaml:"proxy"`
+	Runner      RunnerConfig      `yaml:"runner"`
 	Application ApplicationConfig `yaml:"application"`
 }
