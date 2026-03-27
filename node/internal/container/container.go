@@ -23,6 +23,8 @@ type AppContainer struct {
 
 	// rootPath is the path to container's fs root (including container ID)
 	rootPath string
+	// cgroupPath is the path to container's cgroup (including container ID)
+	cgroupPath string
 
 	l *zap.SugaredLogger
 }

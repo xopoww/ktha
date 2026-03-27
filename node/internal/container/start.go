@@ -19,6 +19,10 @@ type StartContainerSpec struct {
 	Runner    config.RunnerConfig
 	Limits    config.ContainerLimits
 	Readiness config.ReadinessConfig
+
+	// OnStop is called exactly once when the container stops being alive,
+	// and it is guaranteed not be called if StartContainer returns an error
+	OnStop func()
 }
 
 func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContainer, error) {
@@ -43,12 +47,13 @@ func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContaine
 	}
 
 	c := &AppContainer{
-		cmd:      cmd,
-		inflight: sync.WaitGroup{},
-		ready:    make(chan struct{}),
-		down:     make(chan struct{}),
-		rootPath: filepath.Join(spec.Runner.RootBasePath, spec.ID),
-		l:        l,
+		cmd:        cmd,
+		inflight:   sync.WaitGroup{},
+		ready:      make(chan struct{}),
+		down:       make(chan struct{}),
+		rootPath:   filepath.Join(spec.Runner.RootBasePath, spec.ID),
+		cgroupPath: filepath.Join(spec.Runner.CgroupBasePath, spec.ID),
+		l:          l,
 	}
 
 	// wait for exit
@@ -61,6 +66,9 @@ func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContaine
 			l.Warnf("Container crashed: %s.", err)
 		}
 		close(c.down)
+		if spec.OnStop != nil {
+			spec.OnStop()
+		}
 	}()
 
 	go c.pollForReadiness(spec.Readiness)

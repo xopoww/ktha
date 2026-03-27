@@ -17,6 +17,7 @@ import (
 	"github.com/xopoww/ktha/node/internal/admin"
 	"github.com/xopoww/ktha/node/internal/config"
 	"github.com/xopoww/ktha/node/internal/manager"
+	"github.com/xopoww/ktha/node/internal/metrics"
 	"github.com/xopoww/ktha/node/internal/proxy"
 	"go.uber.org/zap"
 )
@@ -105,6 +106,8 @@ func run() error {
 			Image: appCfg.Image,
 		})
 	}
+	metrics.Registry().MustRegister(mgr)
+
 	if err := mgr.AddApps(specs); err != nil {
 		return fmt.Errorf("add apps: %w", err)
 	}

@@ -10,11 +10,14 @@ import (
 	"github.com/xopoww/ktha/node/internal/config"
 	"github.com/xopoww/ktha/node/internal/controller"
 	"github.com/xopoww/ktha/node/internal/manager"
+	"github.com/xopoww/ktha/node/internal/metrics"
 	"go.uber.org/zap"
 )
 
 func NewAdminServer(cfg config.AdminConfig, mgr *manager.AppManager, l *zap.SugaredLogger) *http.Server {
 	mux := http.NewServeMux()
+
+	mux.Handle("/metrics", metrics.Handler())
 
 	mux.HandleFunc("/apps/upgrade", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

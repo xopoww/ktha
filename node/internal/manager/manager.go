@@ -9,6 +9,7 @@ import (
 
 	"github.com/xopoww/ktha/node/internal/config"
 	"github.com/xopoww/ktha/node/internal/controller"
+	"github.com/xopoww/ktha/node/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -78,6 +79,8 @@ func (a *AppManager) addAppLocked(spec AppSpec) error {
 	}
 	a.controllers[spec.ID] = ac
 
+	metrics.AppCount.Add(1)
+
 	return nil
 }
 
@@ -115,10 +118,10 @@ func (a *AppManager) getAppController(id string) (*controller.AppController, err
 	return ac, nil
 }
 
-func (a *AppManager) DialApp(ctx context.Context, id string) (net.Conn, error) {
+func (a *AppManager) DialApp(ctx context.Context, id string) (conn net.Conn, coldStart bool, err error) {
 	ac, err := a.getAppController(id)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	return ac.Dial(ctx)
 }

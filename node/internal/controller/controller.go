@@ -10,6 +10,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/xopoww/ktha/node/internal/config"
 	"github.com/xopoww/ktha/node/internal/container"
+	"github.com/xopoww/ktha/node/internal/metrics"
 	"go.uber.org/zap"
 )
 
@@ -23,6 +24,7 @@ type AppControllerConfig struct {
 }
 
 type AppController struct {
+	id  string
 	cfg AppControllerConfig
 
 	mx             sync.Locker
@@ -37,6 +39,7 @@ func NewAppController(id string, cfg AppControllerConfig, l *zap.SugaredLogger) 
 		return nil, err
 	}
 	return &AppController{
+		id:  id,
 		cfg: cfg,
 
 		mx: &sync.Mutex{},
@@ -59,12 +62,16 @@ func (ac *AppController) startLocked() error {
 		Runner:    ac.cfg.Runner,
 		Limits:    ac.cfg.Limits,
 		Readiness: ac.cfg.Readiness,
+		OnStop: func() {
+			metrics.ContainerCount.WithLabelValues(ac.id).Add(-1)
+		},
 	}
 	c, err := container.StartContainer(spec, ac.l)
 	if err != nil {
 		return fmt.Errorf("start container: %w", err)
 	}
 	ac.active = c
+	metrics.ContainerCount.WithLabelValues(ac.id).Add(1)
 
 	// arm the downscaler
 
@@ -94,12 +101,13 @@ func (ac *AppController) startLocked() error {
 }
 
 // Dial scales the app from zero (if needed), dials it and resets downscale timer
-func (ac *AppController) Dial(ctx context.Context) (net.Conn, error) {
+func (ac *AppController) Dial(ctx context.Context) (conn net.Conn, coldStart bool, err error) {
 	ac.mx.Lock()
 	if ac.active == nil || !ac.active.Alive() {
+		coldStart = true
 		if err := ac.startLocked(); err != nil {
 			ac.mx.Unlock()
-			return nil, fmt.Errorf("start: %w", err)
+			return nil, coldStart, fmt.Errorf("start: %w", err)
 		}
 	} else if ac.downscaleTimer != nil {
 		ac.downscaleTimer.Reset(ac.cfg.Timeouts.IdleTimeout)
@@ -108,10 +116,11 @@ func (ac *AppController) Dial(ctx context.Context) (net.Conn, error) {
 	ac.mx.Unlock()
 
 	if err := c.WaitForReady(ctx); err != nil {
-		return nil, fmt.Errorf("wait for ready: %w", err)
+		return nil, false, fmt.Errorf("wait for ready: %w", err)
 	}
 
-	return c.Dial()
+	conn, err = c.Dial()
+	return conn, coldStart, err
 }
 
 func (ac *AppController) Stop() {
