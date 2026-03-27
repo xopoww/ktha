@@ -46,6 +46,13 @@ func NewAppManager(cfg AppManagerConfig, l *zap.SugaredLogger) *AppManager {
 type AppSpec struct {
 	ID    string
 	Image string
+	Env   config.AppEnv
+}
+
+func (a *AppManager) AddApp(spec AppSpec) error {
+	a.mx.Lock()
+	defer a.mx.Unlock()
+	return a.addAppLocked(spec)
 }
 
 func (a *AppManager) AddApps(specs []AppSpec) error {
@@ -61,13 +68,38 @@ func (a *AppManager) AddApps(specs []AppSpec) error {
 	return nil
 }
 
+func (a *AppManager) DeleteApp(id string) error {
+	a.mx.Lock()
+
+	if a.shuttingDown {
+		a.mx.Unlock()
+		return ErrManagerShuttingDown
+	}
+
+	ac, ok := a.controllers[id]
+	if !ok {
+		a.mx.Unlock()
+		return ErrAppNotFound
+	}
+	delete(a.controllers, id)
+	metrics.AppCount.Add(-1)
+	a.mx.Unlock()
+
+	ac.Stop()
+	return nil
+}
+
 func (a *AppManager) addAppLocked(spec AppSpec) error {
+	if a.shuttingDown {
+		return ErrManagerShuttingDown
+	}
 	if _, ok := a.controllers[spec.ID]; ok {
-		return fmt.Errorf("app %q already exists", spec.ID)
+		return ErrAppAlreadyExists
 	}
 
 	appCfg := controller.AppControllerConfig{
 		ImagePath: filepath.Join(a.cfg.ImagesBasePath, spec.Image),
+		Env:       spec.Env,
 		Runner:    a.cfg.Runner,
 		Limits:    a.cfg.Limits,
 		Readiness: a.cfg.Readiness,

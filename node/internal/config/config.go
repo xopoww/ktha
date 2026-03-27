@@ -41,6 +41,8 @@ type AdminConfig struct {
 	AuthKey string `yaml:"auth_key"`
 }
 
+type AppEnv map[string]string
+
 type ApplicationConfig struct {
 	ImagesBasePath string `yaml:"images_base_path"`
 
@@ -54,6 +56,7 @@ type ApplicationConfig struct {
 
 type AppConfig struct {
 	Image string `yaml:"image"`
+	Env   AppEnv `yaml:"env"`
 }
 
 type Config struct {

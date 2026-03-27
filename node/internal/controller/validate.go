@@ -4,6 +4,9 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
+
+	"github.com/xopoww/ktha/node/internal/config"
 )
 
 type InvalidImageError struct {
@@ -31,6 +34,23 @@ func validateImage(imagePath string) error {
 		return InvalidImageError{
 			ImagePath: imagePath,
 			Err:       errors.New("image is not a directory"),
+		}
+	}
+	return nil
+}
+
+var ErrInvalidEnv = errors.New("invalid env")
+
+func validateEnv(env config.AppEnv) error {
+	for key, val := range env {
+		if key == "" {
+			return fmt.Errorf("%w: empty key", ErrInvalidEnv)
+		}
+		if strings.ContainsAny(key, ",=") {
+			return fmt.Errorf("%w: invalid key %q", ErrInvalidEnv, key)
+		}
+		if strings.Contains(val, ",") {
+			return fmt.Errorf("%w: invalid value %q", ErrInvalidEnv, val)
 		}
 	}
 	return nil

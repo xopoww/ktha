@@ -104,6 +104,7 @@ func run() error {
 		specs = append(specs, manager.AppSpec{
 			ID:    id,
 			Image: appCfg.Image,
+			Env:   appCfg.Env,
 		})
 	}
 	metrics.Registry().MustRegister(mgr)
@@ -114,7 +115,11 @@ func run() error {
 
 	// set up admin server
 
-	adminServer := admin.NewAdminServer(cfg.Admin, mgr, l)
+	adminServer := admin.NewAdminServer(admin.AdminDeps{
+		Cfg: cfg.Admin,
+		Mgr: mgr,
+		L:   l,
+	})
 	go func() {
 		l.Debugf("Starting the admin server on %s...", adminServer.Addr)
 		err := adminServer.ListenAndServe()

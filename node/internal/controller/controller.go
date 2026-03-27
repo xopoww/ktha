@@ -16,6 +16,7 @@ import (
 
 type AppControllerConfig struct {
 	ImagePath string
+	Env       config.AppEnv
 
 	Runner    config.RunnerConfig
 	Limits    config.ContainerLimits
@@ -36,6 +37,9 @@ type AppController struct {
 
 func NewAppController(id string, cfg AppControllerConfig, l *zap.SugaredLogger) (*AppController, error) {
 	if err := validateImage(cfg.ImagePath); err != nil {
+		return nil, err
+	}
+	if err := validateEnv(cfg.Env); err != nil {
 		return nil, err
 	}
 	return &AppController{
@@ -59,6 +63,7 @@ func (ac *AppController) startLocked() error {
 	spec := container.StartContainerSpec{
 		ID:        uuid.New().String(),
 		ImagePath: ac.cfg.ImagePath,
+		Env:       ac.cfg.Env,
 		Runner:    ac.cfg.Runner,
 		Limits:    ac.cfg.Limits,
 		Readiness: ac.cfg.Readiness,

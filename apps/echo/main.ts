@@ -33,7 +33,10 @@ const server = createServer(async (req: IncomingMessage, res: ServerResponse) =>
       return;
     }
     res.writeHead(200, { "Content-Type": "application/json" });
-    res.end(JSON.stringify({ response: message }));
+    res.end(JSON.stringify({
+      response: message,
+      tag: process.env.ECHO_TAG,
+    }));
     return;
   }
 

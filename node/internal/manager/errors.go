@@ -7,4 +7,5 @@ import (
 var (
 	ErrAppNotFound         = errors.New("app not found")
 	ErrManagerShuttingDown = errors.New("manager is shutting down")
+	ErrAppAlreadyExists    = errors.New("app already exists")
 )

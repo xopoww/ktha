@@ -10,6 +10,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"syscall"
 
 	"github.com/xopoww/ktha/node/internal/config"
@@ -20,6 +21,7 @@ import (
 var args struct {
 	containerID string
 	imagePath   string
+	env         string
 
 	limits config.ContainerLimits
 
@@ -38,6 +40,7 @@ const defaultCPUMax = 20000 // 20% of one core
 func init() {
 	flag.StringVar(&args.containerID, runner.FlagContainerID, "", "container id")
 	flag.StringVar(&args.imagePath, runner.FlagImagePath, "", "path to unpacked image (don't pass with --inner)")
+	flag.StringVar(&args.env, runner.FlagEnv, "", "guest env in the form 'key1=val1,key2=val2'")
 
 	flag.IntVar(&args.limits.MemoryMax, runner.FlagMemoryMax, defaultMemoryMax, "max memory (in bytes)")
 	flag.IntVar(&args.limits.PidsMax, runner.FlagPidsMax, defaultPidsMax, "max number of processes")
@@ -224,6 +227,7 @@ func outer(log *zap.Logger) error {
 
 	argv := []string{
 		"--" + runner.FlagContainerID, args.containerID,
+		"--" + runner.FlagEnv, args.env,
 		"--" + runner.FlagNodeBinaryPath, args.nodeBinaryPath,
 		"--" + runner.FlagSocket, args.socket,
 		"--inner",
@@ -299,7 +303,10 @@ func inner(log *zap.Logger) error {
 	const SocketEnvVar = "KTHA_SOCK"
 
 	child := exec.Command(CanonicalNodeBinary, "/index.js")
-	child.Env = []string{fmt.Sprintf("%s=%s", SocketEnvVar, filepath.Join("/", args.socket))}
+	if args.env != "" {
+		child.Env = strings.Split(args.env, ",")
+	}
+	child.Env = append(child.Env, fmt.Sprintf("%s=%s", SocketEnvVar, filepath.Join("/", args.socket)))
 
 	return runChild(log, child)
 }

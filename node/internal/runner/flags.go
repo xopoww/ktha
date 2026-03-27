@@ -3,6 +3,7 @@ package runner
 const (
 	FlagContainerID = "id"
 	FlagImagePath   = "image"
+	FlagEnv         = "env"
 
 	FlagMemoryMax = "mem-max"
 	FlagPidsMax   = "pids-max"

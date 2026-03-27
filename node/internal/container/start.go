@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"github.com/xopoww/ktha/node/internal/config"
@@ -16,6 +17,7 @@ const socketName = "app.sock"
 type StartContainerSpec struct {
 	ID        string
 	ImagePath string
+	Env       config.AppEnv
 	Runner    config.RunnerConfig
 	Limits    config.ContainerLimits
 	Readiness config.ReadinessConfig
@@ -31,6 +33,7 @@ func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContaine
 	flags := []string{
 		"--" + runner.FlagContainerID, spec.ID,
 		"--" + runner.FlagImagePath, spec.ImagePath,
+		"--" + runner.FlagEnv, serializeEnv(spec.Env),
 		"--" + runner.FlagMemoryMax, fmt.Sprint(spec.Limits.MemoryMax),
 		"--" + runner.FlagPidsMax, fmt.Sprint(spec.Limits.PidsMax),
 		"--" + runner.FlagCPUMax, fmt.Sprint(spec.Limits.CPUMax),
@@ -74,4 +77,12 @@ func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContaine
 	go c.pollForReadiness(spec.Readiness)
 
 	return c, nil
+}
+
+func serializeEnv(env config.AppEnv) string {
+	parts := make([]string, 0, len(env))
+	for key, val := range env {
+		parts = append(parts, fmt.Sprintf("%s=%s", key, val))
+	}
+	return strings.Join(parts, ",")
 }
