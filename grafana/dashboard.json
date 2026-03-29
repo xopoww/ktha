@@ -202,7 +202,38 @@
       }
     },
 
-    { "type": "row", "title": "Container Resources", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 14 }, "collapsed": false, "panels": [] },
+    {
+      "title": "Request Rate",
+      "type": "timeseries",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 14 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "fillOpacity": 30,
+            "lineWidth": 2,
+            "stacking": { "mode": "normal" }
+          }
+        }
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(ktha_proxy_request_duration_seconds_count{app_id=~\"$app\", cold_start=\"true\"}[$__rate_interval]))",
+          "legendFormat": "cold start"
+        },
+        {
+          "expr": "sum(rate(ktha_proxy_request_duration_seconds_count{app_id=~\"$app\", cold_start=\"false\"}[$__rate_interval]))",
+          "legendFormat": "warm"
+        }
+      ],
+      "options": {
+        "legend": { "displayMode": "list", "placement": "bottom" },
+        "tooltip": { "mode": "multi" }
+      }
+    },
+
+    { "type": "row", "title": "Container Resources", "gridPos": { "h": 1, "w": 24, "x": 0, "y": 22 }, "collapsed": false, "panels": [] },
 
     {
       "title": "Memory (avg / p95)",

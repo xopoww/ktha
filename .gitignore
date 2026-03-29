@@ -22,5 +22,17 @@ apps/node_modules/
 # Developement configurations and artifacts
 dev/
 
+# Deploy secrets
+deploy/.env.yml
+
+# Terraform
+deploy/terraform/.terraform/
+deploy/terraform/*.tfstate*
+deploy/terraform/.terraform.lock.hcl
+deploy/terraform/terraform.tfvars
+
+# Generated inventory
+deploy/inventory/gcp.yml
+
 # Typst/diagram preview artifacts
 docs/**/*.png

@@ -39,7 +39,7 @@ func BuildName(name string) string {
 var ProxyRequestDuration = prometheus.NewHistogramVec(prometheus.HistogramOpts{
 	Name:    BuildName("proxy_request_duration_seconds"),
 	Help:    "Histogram of proxy request latencies.",
-	Buckets: []float64{0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 5},
+	Buckets: []float64{0.001, 0.002, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2, 5, 10, 30},
 }, []string{"app_id", "cold_start", "dial_ok"})
 
 var AppCount = prometheus.NewGauge(prometheus.GaugeOpts{

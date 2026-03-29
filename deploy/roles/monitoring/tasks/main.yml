@@ -1,0 +1,63 @@
+---
+- name: Create monitoring directory
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ktha_monitoring }}"
+    - "{{ ktha_monitoring }}/grafana"
+
+- name: Template docker-compose.yml
+  template:
+    src: docker-compose.yml.j2
+    dest: "{{ ktha_monitoring }}/docker-compose.yml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Template prometheus.yml
+  template:
+    src: prometheus.yml.j2
+    dest: "{{ ktha_monitoring }}/prometheus.yml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Copy Grafana datasources config
+  copy:
+    content: |
+      apiVersion: 1
+      datasources:
+        - name: Prometheus
+          type: prometheus
+          uid: ktha-prometheus
+          access: proxy
+          url: http://localhost:9090
+          isDefault: true
+    dest: "{{ ktha_monitoring }}/grafana/datasources.yml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Copy Grafana dashboards provider config
+  copy:
+    content: |
+      apiVersion: 1
+      providers:
+        - name: ktha
+          type: file
+          options:
+            path: /var/lib/grafana/dashboards/ktha
+    dest: "{{ ktha_monitoring }}/grafana/dashboards.yml"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Copy Grafana dashboard JSON
+  copy:
+    src: "{{ src_grafana_dashboard }}"
+    dest: "{{ ktha_monitoring }}/grafana/dashboard.json"
+    mode: "0644"
+  notify: Restart monitoring stack
+
+- name: Start monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ ktha_monitoring }}"
+    state: present

@@ -1,0 +1,6 @@
+project_id           = "my-project-id"
+ssh_user             = "username"
+# ssh_public_key_file  = "~/.ssh/id_ed25519.pub"
+# ssh_private_key_file = "~/.ssh/id_ed25519"
+# region               = "europe-west1"
+# zone                 = "europe-west1-b"

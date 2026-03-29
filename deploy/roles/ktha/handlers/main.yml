@@ -1,0 +1,9 @@
+---
+- name: Reload systemd
+  systemd:
+    daemon_reload: true
+
+- name: Restart ktha-node
+  systemd:
+    name: ktha-node
+    state: restarted

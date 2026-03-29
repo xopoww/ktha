@@ -1,0 +1,8 @@
+scrape_configs:
+  - job_name: ktha
+    scrape_interval: 5s
+    metrics_path: /metrics
+    bearer_token: {{ admin_auth_key }}
+    static_configs:
+      - targets:
+          - localhost:{{ admin_port }}

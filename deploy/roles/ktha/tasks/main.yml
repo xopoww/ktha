@@ -1,0 +1,50 @@
+---
+- name: Create ktha directories
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ ktha_bin }}"
+    - "{{ ktha_apps }}"
+    - "{{ ktha_config }}"
+    - "{{ ktha_rootfs }}"
+
+- name: Copy ktha binaries
+  copy:
+    src: "{{ src_binaries }}/{{ item }}"
+    dest: "{{ ktha_bin }}/{{ item }}"
+    mode: "0755"
+  loop:
+    - ktha-node
+    - ktha-runner
+  notify: Restart ktha-node
+
+- name: Copy app images
+  copy:
+    src: "{{ src_apps }}/"
+    dest: "{{ ktha_apps }}/"
+    mode: "0755"
+  notify: Restart ktha-node
+
+- name: Template ktha-node config
+  template:
+    src: config.yml.j2
+    dest: "{{ ktha_config }}/config.yml"
+    mode: "0644"
+  notify: Restart ktha-node
+
+- name: Install ktha-node systemd unit
+  template:
+    src: ktha-node.service.j2
+    dest: /etc/systemd/system/ktha-node.service
+    mode: "0644"
+  notify:
+    - Reload systemd
+    - Restart ktha-node
+
+- name: Enable and start ktha-node
+  systemd:
+    name: ktha-node
+    state: started
+    enabled: true

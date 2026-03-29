@@ -1,0 +1,16 @@
+[Unit]
+Description=ktha-node serverless host
+After=network.target
+
+[Service]
+Type=simple
+Delegate=yes
+IOAccounting=yes
+ExecStart={{ ktha_bin }}/ktha-node -config {{ ktha_config }}/config.yml
+StandardOutput=journal
+StandardError=journal
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

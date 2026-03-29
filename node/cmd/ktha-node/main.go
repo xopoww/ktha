@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 
@@ -30,6 +32,28 @@ func init() {
 	flag.StringVar(&args.config, "config", "/etc/ktha/node/config.yml", "path to yaml config file")
 
 	flag.Parse()
+}
+
+// readSelfCgroup returns this process's cgroup v2 path (e.g. "/system.slice/ktha-node.service")
+// by parsing /proc/self/cgroup for the "0::" unified hierarchy entry.
+func readSelfCgroup() (string, error) {
+	f, err := os.Open("/proc/self/cgroup")
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		// cgroup v2 line format: "0::<path>"
+		if strings.HasPrefix(scanner.Text(), "0::") {
+			return strings.TrimPrefix(scanner.Text(), "0::"), nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", err
+	}
+	return "", fmt.Errorf("no cgroup v2 entry in /proc/self/cgroup")
 }
 
 func run() error {
@@ -58,20 +82,37 @@ func run() error {
 		return fmt.Errorf("enable cgroup controllers: %w", err)
 	}
 
-	// Move ktha-node into its own cgroup for I/O accounting.
+	// Move ktha-node into its own sub-cgroup for I/O accounting.
 	// Image copies happen in this process's cgroup (before the runner
 	// moves the child into the container cgroup), so io.stat here
 	// captures the host-side cold-start I/O overhead.
-	nodeCgroupPath := filepath.Join(cfg.Runner.CgroupBasePath, "node")
+	//
+	// We create the sub-cgroup under the process's current cgroup rather
+	// than under a hardcoded path. This keeps the process inside
+	// systemd's service cgroup (with Delegate=yes) while still working
+	// for manual runs where the current cgroup is root.
+	selfCgroup, err := readSelfCgroup()
+	if err != nil {
+		return fmt.Errorf("read self cgroup: %w", err)
+	}
+	selfCgroupPath := filepath.Join("/sys/fs/cgroup", selfCgroup)
+	nodeCgroupPath := filepath.Join(selfCgroupPath, "ktha-node")
 	if err := os.MkdirAll(nodeCgroupPath, 0o755); err != nil {
 		return fmt.Errorf("mkdir node cgroup: %w", err)
 	}
 	if err := os.WriteFile(
 		filepath.Join(nodeCgroupPath, "cgroup.procs"),
-		[]byte(fmt.Sprint(os.Getpid())),
+		fmt.Appendf(nil, "%d", os.Getpid()),
 		0o644,
 	); err != nil {
 		return fmt.Errorf("move self to node cgroup: %w", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(selfCgroupPath, "cgroup.subtree_control"),
+		[]byte("+io"),
+		0o644,
+	); err != nil {
+		l.Warnf("Failed to enable io controller (I/O metrics will be unavailable): %s.", err)
 	}
 	metrics.SetNodeCgroupPath(nodeCgroupPath)
 

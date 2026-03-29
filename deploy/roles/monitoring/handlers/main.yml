@@ -1,0 +1,6 @@
+---
+- name: Restart monitoring stack
+  community.docker.docker_compose_v2:
+    project_src: "{{ ktha_monitoring }}"
+    state: present
+    recreate: always

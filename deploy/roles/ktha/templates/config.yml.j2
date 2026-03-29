@@ -1,0 +1,43 @@
+runner:
+  binary_path: {{ ktha_bin }}/ktha-runner
+  root_base_path: {{ ktha_rootfs }}
+  cgroup_base_path: /sys/fs/cgroup/ktha
+  nodejs:
+    binary_path: /usr/bin/node
+
+admin:
+  port: {{ admin_port }}
+  auth_key: {{ admin_auth_key }}
+
+proxy:
+  port: {{ proxy_port }}
+
+application:
+  images_base_path: {{ ktha_apps }}/
+
+  limits:
+    memory_max: {{ memory_max }}
+    pids_max: {{ pids_max }}
+    cpu_max: {{ cpu_max }}
+
+  readiness:
+    poll_interval: {{ poll_interval }}
+    timeout: {{ readiness_timeout }}
+
+  timeouts:
+    idle_timeout: {{ idle_timeout }}
+    drain_timeout: {{ drain_timeout }}
+    stop_timeout: {{ stop_timeout }}
+
+  apps:
+    web-echo:
+      image: web-echo
+    sandbox-inspector:
+      image: sandbox-inspector
+{% if provision_tg_bot | bool %}
+    tg-bot:
+      image: tg-bot
+      env:
+        TG_BOT_TOKEN: {{ tg_bot_token }}
+        TG_WEBHOOK_SECRET: {{ tg_webhook_secret }}
+{% endif %}

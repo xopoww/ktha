@@ -1,0 +1,61 @@
+---
+- name: Deploy ktha-node
+  hosts: all
+  become: true
+
+  vars:
+    # Source paths (relative to repo root)
+    repo_root: "{{ playbook_dir }}/.."
+    src_binaries: "{{ repo_root }}/node/build"
+    src_apps: "{{ repo_root }}/apps/build"
+    src_grafana_dashboard: "{{ repo_root }}/grafana/dashboard.json"
+
+    # Destination paths
+    ktha_base: /var/opt/ktha
+    ktha_bin: "{{ ktha_base }}/bin"
+    ktha_apps: "{{ ktha_base }}/apps"
+    ktha_config: /etc/ktha
+    ktha_rootfs: "{{ ktha_base }}/rootfs"
+    ktha_monitoring: "{{ ktha_base }}/monitoring"
+
+    # Config
+    admin_port: 40001
+    admin_auth_key: "{{ env_admin_auth_key | default('dev') }}"
+    proxy_port: 40000
+    grafana_port: 30000
+    grafana_admin_password: "{{ env_grafana_admin_password | default('ktha') }}"
+    memory_max: 26214400  # 25 MB
+    pids_max: 30
+    cpu_max: 20000
+    idle_timeout: 10s
+    drain_timeout: 5s
+    stop_timeout: 5s
+    poll_interval: 100ms
+    readiness_timeout: 30s
+
+    # Pre-provisioned apps
+    provision_tg_bot: false
+    tg_bot_token: ""
+    tg_webhook_secret: ""
+
+  pre_tasks:
+    - name: Load .env overrides
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/.env.yml"
+        name: _env
+      ignore_errors: true
+
+    - name: Apply .env overrides
+      ansible.builtin.set_fact:
+        env_admin_auth_key: "{{ _env.admin_auth_key | default(omit) }}"
+        env_grafana_admin_password: "{{ _env.grafana_admin_password | default(omit) }}"
+        provision_tg_bot: "{{ _env.provision_tg_bot | default(omit) }}"
+        tg_bot_token: "{{ _env.tg_bot_token | default(omit) }}"
+        tg_webhook_secret: "{{ _env.tg_webhook_secret | default(omit) }}"
+      when: _env is defined
+
+  roles:
+    - docker
+    - nodejs
+    - ktha
+    - monitoring
