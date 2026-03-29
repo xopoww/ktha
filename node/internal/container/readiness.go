@@ -34,9 +34,12 @@ func (c *AppContainer) pollForReadiness(cfg config.ReadinessConfig) {
 	}
 }
 
+const healthcheckTimeout = 5 * time.Second
+
 func (c *AppContainer) checkReadiness() bool {
 	if err := func() error {
 		client := &http.Client{
+			Timeout: healthcheckTimeout,
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 					return c.dial()
