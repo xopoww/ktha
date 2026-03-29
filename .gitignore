@@ -21,3 +21,6 @@ apps/node_modules/
 
 # Developement configurations and artifacts
 dev/
+
+# Typst/diagram preview artifacts
+docs/**/*.png
