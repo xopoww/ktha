@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sandbox Inspector</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      background: #0d1117;
+      color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    h1 {
+      color: #58a6ff;
+      font-size: 1.75rem;
+      margin-bottom: 0.25rem;
+    }
+
+    .subtitle {
+      color: #8b949e;
+      font-size: 0.9rem;
+      margin-bottom: 2rem;
+      border-bottom: 1px solid #21262d;
+      padding-bottom: 1rem;
+    }
+
+    .section {
+      background: #161b22;
+      border: 1px solid #30363d;
+      border-radius: 6px;
+      margin-bottom: 1.5rem;
+      overflow: hidden;
+    }
+
+    .section-header {
+      background: #1c2128;
+      padding: 0.75rem 1rem;
+      font-weight: 600;
+      color: #58a6ff;
+      font-size: 0.95rem;
+      border-bottom: 1px solid #30363d;
+    }
+
+    .section-body {
+      padding: 1rem;
+    }
+
+    pre, code {
+      font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+    }
+
+    pre {
+      background: #0d1117;
+      border: 1px solid #21262d;
+      border-radius: 4px;
+      padding: 0.75rem;
+      overflow-x: auto;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: #e6edf3;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+    }
+
+    th, td {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid #21262d;
+      font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+    }
+
+    th {
+      color: #8b949e;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    tr:last-child td { border-bottom: none; }
+
+    .info-grid {
+      display: grid;
+      grid-template-columns: auto 1fr;
+      gap: 0.4rem 1.5rem;
+    }
+
+    .info-label {
+      color: #8b949e;
+      font-size: 0.85rem;
+    }
+
+    .info-value {
+      font-family: "SF Mono", "Fira Code", "Fira Mono", Menlo, Consolas, monospace;
+      font-size: 0.85rem;
+      color: #e6edf3;
+    }
+
+    .badge {
+      display: inline-block;
+      background: #1f6feb33;
+      color: #58a6ff;
+      padding: 0.15rem 0.5rem;
+      border-radius: 10px;
+      font-size: 0.75rem;
+      font-weight: 600;
+    }
+
+    .loading {
+      color: #8b949e;
+      font-style: italic;
+      padding: 2rem;
+      text-align: center;
+    }
+
+    .error-msg {
+      color: #f85149;
+      padding: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <h1>Sandbox Inspector</h1>
+  <p class="subtitle">View of the system from inside the ktha container sandbox</p>
+  <div id="content"><p class="loading">Loading sandbox information...</p></div>
+
+  <script>
+    function escapeHtml(str) {
+      const div = document.createElement("div");
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    function renderProcessList(processes) {
+      if (!processes.length) return "<p>No processes found</p>";
+      let html = "<table><thead><tr><th>PID</th><th>Command</th></tr></thead><tbody>";
+      for (const p of processes) {
+        html += "<tr><td>" + p.pid + "</td><td>" + escapeHtml(p.cmdline) + "</td></tr>";
+      }
+      html += "</tbody></table>";
+      return html;
+    }
+
+    function renderNetworkInterfaces(ifaces) {
+      const entries = Object.entries(ifaces);
+      if (!entries.length) return "<p>No network interfaces</p>";
+      let html = "<table><thead><tr><th>Interface</th><th>Address</th><th>Family</th><th>Internal</th></tr></thead><tbody>";
+      for (const [name, addrs] of entries) {
+        for (const addr of addrs) {
+          html += "<tr><td>" + escapeHtml(name) + "</td><td><code>" + escapeHtml(addr.address) + "</code></td><td>" + escapeHtml(addr.family) + "</td><td>" + (addr.internal ? "yes" : "no") + "</td></tr>";
+        }
+      }
+      html += "</tbody></table>";
+      return html;
+    }
+
+    function renderEnvVars(vars) {
+      const entries = Object.entries(vars);
+      if (!entries.length) return "<p>No environment variables found</p>";
+      let html = "<table><thead><tr><th>Variable</th><th>Value</th></tr></thead><tbody>";
+      for (const [key, value] of entries) {
+        html += "<tr><td>" + escapeHtml(key) + "</td><td>" + escapeHtml(value) + "</td></tr>";
+      }
+      html += "</tbody></table>";
+      return html;
+    }
+
+    function section(title, body, badge) {
+      const badgeHtml = badge ? ' <span class="badge">' + escapeHtml(badge) + '</span>' : "";
+      return '<div class="section"><div class="section-header">' + escapeHtml(title) + badgeHtml + '</div><div class="section-body">' + body + '</div></div>';
+    }
+
+    async function load() {
+      const container = document.getElementById("content");
+      try {
+        const base = window.location.pathname.replace(/\/?$/, "/");
+        const resp = await fetch(base + "api/info");
+        if (!resp.ok) throw new Error("HTTP " + resp.status);
+        const data = await resp.json();
+
+        let html = "";
+
+        // Process Info
+        const pi = data.processInfo;
+        html += section("Process Info", '<div class="info-grid">'
+          + '<span class="info-label">PID</span><span class="info-value">' + pi.pid + '</span>'
+          + '<span class="info-label">UID</span><span class="info-value">' + pi.uid + '</span>'
+          + '<span class="info-label">GID</span><span class="info-value">' + pi.gid + '</span>'
+          + '<span class="info-label">Hostname</span><span class="info-value">' + escapeHtml(pi.hostname) + '</span>'
+          + '</div>');
+
+        // Process List
+        html += section("Process List", renderProcessList(data.processList), data.processList.length + " processes");
+
+        // Network Interfaces
+        html += section("Network Interfaces", renderNetworkInterfaces(data.networkInterfaces));
+
+        // Environment Variables
+        html += section("Environment Variables", renderEnvVars(data.envVars));
+
+        // Filesystem
+        html += section("Filesystem", "<pre>" + escapeHtml(data.fileTree) + "</pre>");
+
+        // Mount Table
+        html += section("Mount Table", "<pre>" + escapeHtml(data.mountTable) + "</pre>");
+
+        container.innerHTML = html;
+      } catch (err) {
+        container.innerHTML = '<p class="error-msg">Failed to load sandbox info: ' + escapeHtml(err.message) + '</p>';
+      }
+    }
+
+    load();
+  </script>
+</body>
+</html>

@@ -52,11 +52,28 @@ func run() error {
 	}
 	if err := os.WriteFile(
 		filepath.Join(cfg.Runner.CgroupBasePath, "cgroup.subtree_control"),
-		[]byte("+memory +pids +cpu"),
+		[]byte("+memory +pids +cpu +io"),
 		0o644,
 	); err != nil {
 		return fmt.Errorf("enable cgroup controllers: %w", err)
 	}
+
+	// Move ktha-node into its own cgroup for I/O accounting.
+	// Image copies happen in this process's cgroup (before the runner
+	// moves the child into the container cgroup), so io.stat here
+	// captures the host-side cold-start I/O overhead.
+	nodeCgroupPath := filepath.Join(cfg.Runner.CgroupBasePath, "node")
+	if err := os.MkdirAll(nodeCgroupPath, 0o755); err != nil {
+		return fmt.Errorf("mkdir node cgroup: %w", err)
+	}
+	if err := os.WriteFile(
+		filepath.Join(nodeCgroupPath, "cgroup.procs"),
+		[]byte(fmt.Sprint(os.Getpid())),
+		0o644,
+	); err != nil {
+		return fmt.Errorf("move self to node cgroup: %w", err)
+	}
+	metrics.SetNodeCgroupPath(nodeCgroupPath)
 
 	// set up dummy nodejs process to fault in shared pages
 

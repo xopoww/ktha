@@ -229,13 +229,14 @@ func outer(log *zap.Logger) error {
 		"--" + runner.FlagContainerID, args.containerID,
 		"--" + runner.FlagEnv, args.env,
 		"--" + runner.FlagNodeBinaryPath, args.nodeBinaryPath,
+		"--" + runner.FlagRootBasePath, args.rootBasePath,
 		"--" + runner.FlagSocket, args.socket,
 		"--inner",
 	}
 	child := exec.Command(self, argv...)
 
 	child.SysProcAttr = &syscall.SysProcAttr{
-		Cloneflags:  syscall.CLONE_NEWNS | syscall.CLONE_NEWPID,
+		Cloneflags:  syscall.CLONE_NEWNS | syscall.CLONE_NEWPID | syscall.CLONE_NEWNET | syscall.CLONE_NEWUTS,
 		CgroupFD:    cgroupFD,
 		UseCgroupFD: true,
 	}
@@ -287,6 +288,12 @@ func inner(log *zap.Logger) error {
 	}
 	if err := syscall.Mount("proc", procTarget, "proc", 0, ""); err != nil {
 		return fmt.Errorf("mount proc: %w", err)
+	}
+
+	// set hostname to container ID (requires CLONE_NEWUTS)
+
+	if err := syscall.Sethostname([]byte(args.containerID)); err != nil {
+		return fmt.Errorf("sethostname: %w", err)
 	}
 
 	// chroot

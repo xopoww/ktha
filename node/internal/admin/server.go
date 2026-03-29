@@ -28,7 +28,12 @@ func NewAdminServer(deps AdminDeps) *http.Server {
 	return &http.Server{
 		Addr: fmt.Sprintf(":%d", deps.Cfg.Port),
 		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			key := r.Header.Get("x-api-key")
+			const prefix = "Bearer "
+			auth := r.Header.Get("Authorization")
+			key := ""
+			if len(auth) > len(prefix) {
+				key = auth[len(prefix):]
+			}
 			if subtle.ConstantTimeCompare([]byte(key), []byte(deps.Cfg.AuthKey)) != 1 {
 				w.WriteHeader(http.StatusUnauthorized)
 				return

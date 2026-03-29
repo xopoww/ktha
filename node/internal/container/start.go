@@ -14,6 +14,13 @@ import (
 
 const socketName = "app.sock"
 
+// StopInfo is passed to OnStop with details about how the container stopped.
+type StopInfo struct {
+	// Killed is true if the container exited with SIGKILL (exit code 137).
+	// This typically means OOM kill by cgroups, but can also be a stop timeout.
+	Killed bool
+}
+
 type StartContainerSpec struct {
 	ID        string
 	ImagePath string
@@ -24,7 +31,7 @@ type StartContainerSpec struct {
 
 	// OnStop is called exactly once when the container stops being alive,
 	// and it is guaranteed not be called if StartContainer returns an error
-	OnStop func()
+	OnStop func(StopInfo)
 }
 
 func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContainer, error) {
@@ -68,9 +75,19 @@ func StartContainer(spec StartContainerSpec, l *zap.SugaredLogger) (*AppContaine
 			// TODO: dump stdout/stderr
 			l.Warnf("Container crashed: %s.", err)
 		}
+
+		var info StopInfo
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			// Exit code 137 = killed by SIGKILL (128+9), which is what the
+			// cgroup OOM killer sends.
+			if exitErr.ExitCode() == 137 {
+				info.Killed = true
+			}
+		}
+
 		close(c.down)
 		if spec.OnStop != nil {
-			spec.OnStop()
+			spec.OnStop(info)
 		}
 	}()
 

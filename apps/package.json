@@ -1,7 +1,10 @@
 {
   "private": true,
   "devDependencies": {
-    "esbuild": "^0.25.0",
-    "@types/node": "^22.0.0"
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.25.0"
+  },
+  "dependencies": {
+    "grammy": "^1.41.1"
   }
 }

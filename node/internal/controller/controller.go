@@ -67,8 +67,12 @@ func (ac *AppController) startLocked() error {
 		Runner:    ac.cfg.Runner,
 		Limits:    ac.cfg.Limits,
 		Readiness: ac.cfg.Readiness,
-		OnStop: func() {
+		OnStop: func(info container.StopInfo) {
 			metrics.ContainerCount.WithLabelValues(ac.id).Add(-1)
+			if info.Killed {
+				ac.l.Warn("Container was killed (OOM or stop timeout).")
+				metrics.ContainerKills.WithLabelValues(ac.id).Inc()
+			}
 		},
 	}
 	c, err := container.StartContainer(spec, ac.l)
