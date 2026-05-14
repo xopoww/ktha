@@ -2,7 +2,7 @@
 
 A prototype backend for a lightweight Node.js hosting platform. Apps run in isolated Linux namespaces, start on first HTTP request (cold start), and stop after an idle timeout.
 
-Made as a take-home assignment for [Kineto](kineto.app).
+Made as a take-home assignment for [Kineto](https://kineto.app).
 
 ## Features
 
